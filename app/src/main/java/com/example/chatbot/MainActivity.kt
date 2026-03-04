@@ -4,7 +4,16 @@ import android.R.attr.enabled
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,14 +24,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -93,6 +106,18 @@ fun PantallaChat(
     var text by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var showSnackbar by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val animatedColor by animateColorAsState(
+        targetValue = if (text.isNotBlank()) Color(0xFF4CAF50) else Color.Gray,
+        animationSpec = tween(durationMillis = 300),
+        label = ""
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (text.isNotBlank()) 1f else 0.9f,
+        animationSpec = tween(200),
+        label = ""
+    )
+    val clipboardManager = LocalClipboardManager.current
 
     Column(
         modifier = Modifier
@@ -106,13 +131,73 @@ fun PantallaChat(
                 .padding(8.dp), state = listState
         ) {
             // Lista de mensajes
-            items(viewModel.messages) { message ->
-                MensajeChat(message)
+            items(viewModel.messages, key = { it.hashCode() }) { message ->
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(animationSpec = tween(300)) + slideInVertically(
+                        initialOffsetY = { it / 2 },
+                        animationSpec = tween(300)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        MensajeChat(
+                            message = message,
+                            onCopy = { textToCopy ->
+
+                                clipboardManager.setText(AnnotatedString(textToCopy))
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "Mensaje copiado al portapapeles",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            }
+                        )
+                        if (message.role == "assistant") {
+                            Row(
+                                modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                AssistChip(
+                                    onClick = {
+                                        viewModel.sendMessage("Explícame más acerca del tema.")
+                                    },
+                                    label = { Text("Explicar", color = Color.Black) },
+                                    colors = AssistChipDefaults.assistChipColors()
+                                )
+                                AssistChip(
+                                    onClick = {
+                                        viewModel.sendMessage("¿Podrías resumirlo?")
+                                    },
+                                    label = { Text("Resumir", color = Color.Black) }
+                                )
+                                AssistChip(
+                                    onClick = {
+                                        viewModel.sendMessage("Dame un ejemplo.")
+                                    },
+                                    label = { Text("Ejemplo", color = Color.Black) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             if (viewModel.isThinking) {
                 item {
-                    TypingIndicator()
+                AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(animationSpec = tween(300)) + slideInVertically(
+                            initialOffsetY = { it / 2 },
+                            animationSpec = tween(300)
+                        )
+                    ) {
+                        TypingIndicator()
+                    }
                 }
             }
         }
@@ -201,8 +286,9 @@ fun PantallaChat(
                             }
                         }
                     }, colors = ButtonDefaults.buttonColors(
-                        containerColor = if (viewModel.isTyping) Color.Gray else Color(0xFF4CAF50) // Color de fondo de usuario
-                    ), enabled = text.isNotBlank()
+                        containerColor = animatedColor
+                    ), enabled = text.isNotBlank(),
+                    modifier = Modifier.scale(scale)
 
                 ) {
                     Icon(
@@ -219,11 +305,17 @@ fun PantallaChat(
 }
 
 // Clase para los mensajes del chat
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MensajeChat(message: Message) {
+fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
 
     // Boolean que comprueba si el autor del mensaje es el usuario o no
     val isUser = message.role == "user"
+    val clipboardManager = LocalClipboard.current
+
+//    onLongClick = {
+//        clipboardManager.setText(AnnotatedString(message.content))
+//    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -233,6 +325,12 @@ fun MensajeChat(message: Message) {
         Box(
             modifier = Modifier
                 .padding(4.dp)
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        onCopy(message.content)
+                    }
+                )
                 .background(
                     //Color(0xFF1976D2) 0xFF4CAF50 0xFFA5D6A7
                     // distinto color de mensaje para cada parte
@@ -240,9 +338,23 @@ fun MensajeChat(message: Message) {
                 )
                 .padding(12.dp)
                 .widthIn(max = 280.dp)
+                .animateContentSize()
         ) {
             Text(
                 text = message.content, color = if (isUser) Color.White else Color.Black
+            )
+        }
+        // Icono de copiar abajo a la derecha
+        IconButton(
+            onClick = { onCopy(message.content) }, // <-- usa la lambda pasada
+            modifier = Modifier
+                .size(20.dp)
+                .align(Alignment.Bottom)
+        ) {
+            Icon(
+                Icons.Default.ContentCopy,
+                contentDescription = "Copiar mensaje",
+                tint = Color.Black
             )
         }
     }

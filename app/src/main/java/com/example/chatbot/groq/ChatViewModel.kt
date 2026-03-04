@@ -72,10 +72,20 @@ class ChatViewModel : ViewModel() {
                         // Se va reemplazando el último mensaje
                         messages = messages.dropLast(1) + botMessage
                     }
+                } else {
+                    // API devolvió error, se muestra en chat
+                    messages = messages + Message(
+                        "bot",
+                        "¡Error! No se pudo obtener respuesta del chatbot. Código: ${response.code()}"
+                    )
                 }
 
             } catch (e: Exception) {
-                println("Error: $e")
+                // Error de red o excepción → mostrar en chat
+                messages = messages + Message(
+                    "bot",
+                    "¡Error! No se pudo conectar al chatbot: ${e.message}"
+                )
             }
             finally {
                 isTyping = false
