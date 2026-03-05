@@ -29,11 +29,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -45,6 +43,17 @@ import com.example.chatbot.groq.*
 import com.example.chatbot.ui.theme.ChatBotTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.R.drawable
+import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.window.Dialog
+import androidx.room.Room
+import com.example.chatbot.bbdd.ChatDatabase
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -55,6 +64,8 @@ class MainActivity : ComponentActivity() {
                 val snackbarHostState = remember { SnackbarHostState() }
                 val listState = rememberLazyListState()
                 val viewModel: ChatViewModel = viewModel()
+                var showDialog by remember { mutableStateOf(false) }
+                val context = LocalContext.current
 
                 Scaffold(snackbarHost = {
                     SnackbarHost(hostState = snackbarHostState)
@@ -70,7 +81,7 @@ class MainActivity : ComponentActivity() {
                                     // que borre la lista de mensajes
                                     // si se pudiera hacer un viewmodel.messages.clear
                                     // Error: Cannot access 'messages': it is private in 'com.example.chatbot.groq.ChatViewModel'.
-                                    viewModel.resetMessages()
+                                    showDialog=true
                                 }) {
                                 Icon(
                                     Icons.Default.Delete,
@@ -86,11 +97,23 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        viewModel.resetMessages()
+                        viewModel.clearMessages()
+                        // PantallaChat recibe el viewModel, estado de lista y snackbarHostState
                         PantallaChat(
-                            viewModel = viewModel, listState = listState
+                            viewModel = viewModel,
+                            listState = listState
                         )
                     }
+                }
+                if (showDialog) {
+                    DialogEliminarChat (
+                        onDismiss = { showDialog = false },
+                        onConfirm = {
+                            viewModel.clearMessages()
+                            Toast.makeText(context, "Historial de mensajes eliminado", Toast.LENGTH_SHORT).show()
+                            showDialog = false
+                        }
+                    )
                 }
             }
         }
@@ -159,7 +182,7 @@ fun PantallaChat(
                         )
                         if (message.role == "assistant") {
                             Row(
-                                modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+                                modifier = Modifier.padding(start = 40.dp, top = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 AssistChip(
@@ -189,7 +212,7 @@ fun PantallaChat(
 
             if (viewModel.isThinking) {
                 item {
-                AnimatedVisibility(
+                    AnimatedVisibility(
                         visible = true,
                         enter = fadeIn(animationSpec = tween(300)) + slideInVertically(
                             initialOffsetY = { it / 2 },
@@ -311,7 +334,7 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
 
     // Boolean que comprueba si el autor del mensaje es el usuario o no
     val isUser = message.role == "user"
-    val clipboardManager = LocalClipboard.current
+    val clipboardManager = LocalClipboardManager.current
 
 //    onLongClick = {
 //        clipboardManager.setText(AnnotatedString(message.content))
@@ -322,6 +345,32 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
         // distinta orientación para cada parte
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
+        if (!isUser) {
+            Image(
+                modifier = Modifier
+                    .size(30.dp)
+                    .padding(top = 20.dp),
+                painter = painterResource(R.drawable.bot),
+                contentDescription = "Imagen del bot",
+                //contentScale = ContentScale.FillBounds
+            )
+        }
+        if (isUser) {
+            // Icono de copiar abajo a la derecha
+            IconButton(
+                onClick = { onCopy(message.content) },
+                modifier = Modifier
+                    .size(20.dp)
+                    .align(Alignment.Bottom)
+                    .padding(bottom = 10.dp)
+            ) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = "Copiar mensaje",
+                    tint = Color.Black
+                )
+            }
+        }
         Box(
             modifier = Modifier
                 .padding(4.dp)
@@ -337,24 +386,38 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
                     if (isUser) Color(0xFFA5D6A7) else Color.White, RoundedCornerShape(16.dp)
                 )
                 .padding(12.dp)
-                .widthIn(max = 280.dp)
+                .widthIn(max = 250.dp)
                 .animateContentSize()
         ) {
             Text(
                 text = message.content, color = if (isUser) Color.White else Color.Black
             )
         }
-        // Icono de copiar abajo a la derecha
-        IconButton(
-            onClick = { onCopy(message.content) }, // <-- usa la lambda pasada
-            modifier = Modifier
-                .size(20.dp)
-                .align(Alignment.Bottom)
-        ) {
-            Icon(
-                Icons.Default.ContentCopy,
-                contentDescription = "Copiar mensaje",
-                tint = Color.Black
+        if (!isUser) {
+            // Icono de copiar abajo a la derecha
+            IconButton(
+                onClick = { onCopy(message.content) },
+                modifier = Modifier
+                    .size(20.dp)
+                    .align(Alignment.Bottom)
+                    .padding(bottom = 10.dp)
+            ) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = "Copiar mensaje",
+                    tint = Color.Black
+                )
+            }
+        }
+        if (isUser) {
+            Image(
+                modifier = Modifier
+                    .size(30.dp)
+                    .align(Alignment.Top)
+                    .padding(top = 10.dp),
+                painter = painterResource(R.drawable.user),
+                contentDescription = "Imagen del usuario",
+                //contentScale = ContentScale.None
             )
         }
     }
@@ -378,4 +441,30 @@ fun TypingIndicator() {
             )
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DialogEliminarChat(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        icon = {
+            Icon(Icons.Default.Info, contentDescription = "Example Icon")
+        },
+        title = { Text("¿Desea proceder con la eliminación del historial del chat?") },
+        text = { Text("Esta acción es irreversible y no se podrá deshacer. Se perderán todos los mensajes") },
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Confirmar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
