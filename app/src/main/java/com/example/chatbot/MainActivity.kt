@@ -46,11 +46,18 @@ import kotlinx.coroutines.launch
 import android.R.drawable
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.SemanticsProperties.ImeAction
 import androidx.compose.ui.window.Dialog
 import androidx.room.Room
 import com.example.chatbot.bbdd.ChatDatabase
@@ -81,7 +88,7 @@ class MainActivity : ComponentActivity() {
                                     // que borre la lista de mensajes
                                     // si se pudiera hacer un viewmodel.messages.clear
                                     // Error: Cannot access 'messages': it is private in 'com.example.chatbot.groq.ChatViewModel'.
-                                    showDialog=true
+                                    showDialog = true
                                 }) {
                                 Icon(
                                     Icons.Default.Delete,
@@ -97,7 +104,6 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        viewModel.clearMessages()
                         // PantallaChat recibe el viewModel, estado de lista y snackbarHostState
                         PantallaChat(
                             viewModel = viewModel,
@@ -106,11 +112,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (showDialog) {
-                    DialogEliminarChat (
+                    DialogEliminarChat(
                         onDismiss = { showDialog = false },
                         onConfirm = {
                             viewModel.clearMessages()
-                            Toast.makeText(context, "Historial de mensajes eliminado", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "Historial de mensajes eliminado",
+                                Toast.LENGTH_SHORT
+                            ).show()
                             showDialog = false
                         }
                     )
@@ -123,7 +133,7 @@ class MainActivity : ComponentActivity() {
 // Clase para la pantalla del chat
 @Composable
 fun PantallaChat(
-    viewModel: ChatViewModel = viewModel(), listState: LazyListState
+    viewModel: ChatViewModel, listState: LazyListState
 ) {
 
     var text by remember { mutableStateOf("") }
@@ -154,7 +164,7 @@ fun PantallaChat(
                 .padding(8.dp), state = listState
         ) {
             // Lista de mensajes
-            items(viewModel.messages, key = { it.hashCode() }) { message ->
+            items(viewModel.messages, key = { it.timestamp }) { message ->
                 AnimatedVisibility(
                     visible = true,
                     enter = fadeIn(animationSpec = tween(300)) + slideInVertically(
@@ -180,29 +190,34 @@ fun PantallaChat(
                                 }
                             }
                         )
-                        if (message.role == "assistant") {
+                        if (message.role == "assistant" && !viewModel.isTyping) {
                             Row(
-                                modifier = Modifier.padding(start = 40.dp, top = 4.dp),
+                                modifier = Modifier.padding(start = 46.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 AssistChip(
                                     onClick = {
-                                        viewModel.sendMessage("Explícame más acerca del tema.")
+                                        if (!viewModel.isTyping) viewModel.sendMessage("Explícame más acerca del tema.")
                                     },
+                                    enabled = !viewModel.isTyping,
                                     label = { Text("Explicar", color = Color.Black) },
                                     colors = AssistChipDefaults.assistChipColors()
                                 )
                                 AssistChip(
                                     onClick = {
-                                        viewModel.sendMessage("¿Podrías resumirlo?")
+                                        if (!viewModel.isTyping) viewModel.sendMessage("¿Podrías resumirlo?")
                                     },
-                                    label = { Text("Resumir", color = Color.Black) }
+                                    enabled = !viewModel.isTyping,
+                                    label = { Text("Resumir", color = Color.Black) },
+                                    colors = AssistChipDefaults.assistChipColors()
                                 )
                                 AssistChip(
                                     onClick = {
-                                        viewModel.sendMessage("Dame un ejemplo.")
+                                        if (!viewModel.isTyping) viewModel.sendMessage("Dame un ejemplo.")
                                     },
-                                    label = { Text("Ejemplo", color = Color.Black) }
+                                    enabled = !viewModel.isTyping,
+                                    label = { Text("Ejemplo", color = Color.Black) },
+                                    colors = AssistChipDefaults.assistChipColors()
                                 )
                             }
                         }
@@ -246,23 +261,30 @@ fun PantallaChat(
 
         Box(modifier = Modifier.fillMaxWidth()) {
 
-            // Botón de acción flotante arriba del row
-            FloatingActionButton(
-                onClick = {
-                    scope.launch { listState.animateScrollToItem(0) }
-                },
-                containerColor = Color(0xFF4CAF50),
+            Column(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)  // arriba a la derecha del Row
-                    .zIndex(1f)               // siempre por encima del Row
-                    .offset(y = if (showSnackbar) (-122).dp else (-64).dp)     // ajusta altura sobre el Row
-                    .background(Color.Transparent)
+                    .align(Alignment.TopEnd)
+                    .zIndex(1f)
+                    .offset(y = if (showSnackbar) (-122).dp else (-64).dp)
             ) {
-                Icon(
-                    Icons.Default.ArrowUpward,
-                    contentDescription = "Subir al inicio",
-                    tint = Color.White
-                )
+                // Botón de acción flotante arriba del row
+                FloatingActionButton(
+                    onClick = {
+                        scope.launch { listState.animateScrollToItem(viewModel.messages.size) }
+                    },
+                    containerColor = Color(0xFF4CAF50),
+                    modifier = Modifier
+                        //.align(Alignment.TopEnd)  // arriba a la derecha del Row
+                        //.zIndex(1f)               // siempre por encima del Row
+                        //.offset(y = if (showSnackbar) (-122).dp else (-64).dp)     // ajusta altura sobre el Row
+                        .background(Color.Transparent)
+                ) {
+                    Icon(
+                        Icons.Default.ArrowDownward,
+                        contentDescription = "Subir al inicio",
+                        tint = Color.White
+                    )
+                }
             }
 
             // Row con TextField + Button
@@ -290,6 +312,17 @@ fun PantallaChat(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
                         disabledIndicatorColor = Color.Transparent
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Send
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (text.isNotBlank() && !viewModel.isTyping) {
+                                viewModel.sendMessage(text)
+                                text = ""
+                            }
+                        }
                     )
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -335,6 +368,10 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
     // Boolean que comprueba si el autor del mensaje es el usuario o no
     val isUser = message.role == "user"
     val clipboardManager = LocalClipboardManager.current
+    val hora = remember(message.timestamp) {
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(message.timestamp))
+    }
 
 //    onLongClick = {
 //        clipboardManager.setText(AnnotatedString(message.content))
@@ -348,8 +385,10 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
         if (!isUser) {
             Image(
                 modifier = Modifier
-                    .size(30.dp)
-                    .padding(top = 20.dp),
+                    .padding(top = 10.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, Color.Black, CircleShape),
                 painter = painterResource(R.drawable.bot),
                 contentDescription = "Imagen del bot",
                 //contentScale = ContentScale.FillBounds
@@ -360,9 +399,9 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
             IconButton(
                 onClick = { onCopy(message.content) },
                 modifier = Modifier
+                    .padding(bottom = 5.dp)
                     .size(20.dp)
                     .align(Alignment.Bottom)
-                    .padding(bottom = 10.dp)
             ) {
                 Icon(
                     Icons.Default.ContentCopy,
@@ -393,14 +432,15 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
                 text = message.content, color = if (isUser) Color.White else Color.Black
             )
         }
+
         if (!isUser) {
             // Icono de copiar abajo a la derecha
             IconButton(
                 onClick = { onCopy(message.content) },
                 modifier = Modifier
+                    .padding(bottom = 5.dp)
                     .size(20.dp)
                     .align(Alignment.Bottom)
-                    .padding(bottom = 10.dp)
             ) {
                 Icon(
                     Icons.Default.ContentCopy,
@@ -412,14 +452,30 @@ fun MensajeChat(message: Message, onCopy: (String) -> Unit) {
         if (isUser) {
             Image(
                 modifier = Modifier
-                    .size(30.dp)
+                    .padding(top = 10.dp)
+                    .size(40.dp)
                     .align(Alignment.Top)
-                    .padding(top = 10.dp),
+                    .clip(CircleShape)
+                    .border(1.dp, Color(0xFF4CAF50), CircleShape),
                 painter = painterResource(R.drawable.user),
                 contentDescription = "Imagen del usuario",
-                //contentScale = ContentScale.None
+                contentScale = ContentScale.Crop
             )
         }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        // distinta orientación para cada parte
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        // Muestra la hora del mensaje
+        Text(
+            text = hora,
+            fontSize = 11.sp,
+            color = Color.Gray,
+            modifier = Modifier
+                .padding(horizontal = 48.dp)
+        )
     }
 }
 
@@ -428,6 +484,16 @@ fun TypingIndicator() {
     Row(
         modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start
     ) {
+        Image(
+            modifier = Modifier
+                .padding(top = 10.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .border(1.dp, Color.Black, CircleShape),
+            painter = painterResource(R.drawable.bot),
+            contentDescription = "Imagen del bot",
+            //contentScale = ContentScale.FillBounds
+        )
         Box(
             modifier = Modifier
                 .padding(4.dp)
